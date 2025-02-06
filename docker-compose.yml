@@ -1,0 +1,86 @@
+version: '3'
+
+services:
+
+  postgres:
+    container_name: 'phone-book-postgres'
+    build:
+      context: ./.docker/postgres
+      dockerfile: Dockerfile
+    restart: always
+    shm_size: 4g
+    ports:
+      - 9445:5432
+    volumes:
+      - "./.docker/postgres/data:/var/lib/postgresql/data:rw"
+    environment:
+      - POSTGRES_DB=phone-book
+      - POSTGRES_USER=dev
+      - POSTGRES_PASSWORD=123456789
+      - PGDATA=/var/lib/postgresql/data
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    networks:
+      - phone-book-local_node_net
+
+  php:
+    build: .docker/php
+    container_name: 'phone-book-php'
+    ports:
+      - 9003:5000
+    volumes:
+      - ./phone-book-api:/var/www/html/phone-book
+      - ./.docker/php/conf.d/xdebug.ini:/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+      - ./.docker/php/conf.d/error_reporting.ini:/usr/local/etc/php/conf.d/error_reporting.ini
+    links:
+      - postgres
+    depends_on:
+      - build
+    networks:
+      - phone-book-local_node_net
+
+  build:
+    build: .docker/php
+    container_name: 'phone-book-build'
+    volumes:
+      - ./phone-book-api:/var/www/html/phone-book
+    command: >
+      bash -c "cd /var/www/html/phone-book && composer post-clone"
+    networks:
+      - phone-book-local_node_net
+
+  nginx:
+    build:
+      context: .docker
+      dockerfile: nginx/Dockerfile
+    container_name: 'phone-book-nginx'
+    ports:
+      - 9001:80
+      - 9002:443
+    depends_on:
+      - php
+    volumes:
+      - ./phone-book-api:/var/www/html/phone-book
+      - ./.docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      phone-book-local_node_net:
+        aliases:
+          - phone-book.local
+        ipv4_address: 180.27.1.0
+
+  linux:
+    build: .docker/linux
+    volumes:
+      - .:/project
+
+volumes:
+  postgres:
+    driver: local
+  php:
+    driver: local
+
+networks:
+  phone-book-local_node_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 180.27.0.0/16
